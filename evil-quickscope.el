@@ -9,7 +9,7 @@
 
 ;; Homepage: http://github.com/blorbx/evil-quickscope
 ;; Keywords: faces, emulation, vim, evil
-;; Package-Requires: ((evil "0"))
+;; Package-Requires: ((evil "0") (cl-lib "0.5"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -63,6 +63,7 @@
 ;;; Code:
 
 (require 'evil)
+(eval-when-compile (require 'cl-lib))
 
 (defgroup evil-quickscope nil
   "Target highlighting for evil-mode's f,F,t,T keys."
@@ -148,37 +149,6 @@ updating when holding a key to scroll. Set to 0 to disable."
 ;;; Character Finding Functions
 (defun evil-quickscope-get-highlighted-chars (start end)
   "Gets highlighted chars and returns a list of first chars and second chars."
-  (defun update-hl-chars (pos)
-    "Checks if char at pos is separator/invalid, if not update seen-chars list."
-    (let ((char (char-after pos)))
-      (if (is-separator-or-invalid-char-p char)
-          (add-to-hl-chars)
-        (update-seen-chars))))
-
-  (defun is-separator-or-invalid-char-p (char)
-    "Determine if char is a separator or invalid."
-    (or (evil-quickscope-is-separator-p char)
-        (not (plist-get seen-chars char))))
-
-  (defun add-to-hl-chars ()
-    "Adds current hl-char pair to hl-chars list."
-    (when (not first-word)
-      (setq hl-chars (cons word-hl-chars hl-chars)))
-    (setq word-hl-chars (list 0 0))
-    (setq first-word nil))
-
-  (defun update-seen-chars ()
-    "Increments current char in seen-chars list and updates hl-char pair."
-    (setq seen-chars (evil-quickscope-increment-plist-char seen-chars char))
-    (let ((occurences (plist-get seen-chars char))
-          (hl-p (car word-hl-chars))
-          (hl-s (cadr word-hl-chars)))
-      (cond
-       ((and (= occurences 1) (= hl-p 0))
-        (setcar word-hl-chars pos))
-       ((and (= occurences 2) (= hl-s 0))
-        (setcar (cdr word-hl-chars) pos)))))
-
   (let ((hl-chars ())
         (first-word t)
         (word-hl-chars '(0 0))
@@ -187,14 +157,45 @@ updating when holding a key to scroll. Set to 0 to disable."
         (direction (if (> end start) 1 -1))
         (pos start)
         (num-searches 0))
-    (while (and (/= pos end)
-                (or (eq evil-quickscope-search-max nil)
-                    (< num-searches evil-quickscope-search-max)))
-      (update-hl-chars pos)
-      (setq pos (+ pos direction))
-      (setq num-searches (1+ num-searches)))
-    (add-to-hl-chars)
-    hl-chars))
+    (cl-flet* ((update-hl-chars (pos)
+              "Checks if char at pos is separator/invalid, if not update seen-chars list."
+              (let ((char (char-after pos)))
+                (if (is-separator-or-invalid-char-p char)
+                    (add-to-hl-chars)
+                  (update-seen-chars))))
+
+            (is-separator-or-invalid-char-p (char)
+              "Determine if char is a separator or invalid."
+              (or (evil-quickscope-is-separator-p char)
+                  (not (plist-get seen-chars char))))
+
+            (add-to-hl-chars ()
+              "Adds current hl-char pair to hl-chars list."
+              (when (not first-word)
+                (setq hl-chars (cons word-hl-chars hl-chars)))
+              (setq word-hl-chars (list 0 0))
+              (setq first-word nil))
+
+            (update-seen-chars ()
+              "Increments current char in seen-chars list and updates hl-char pair."
+              (setq seen-chars (evil-quickscope-increment-plist-char seen-chars char))
+              (let ((occurences (plist-get seen-chars char))
+                    (hl-p (car word-hl-chars))
+                    (hl-s (cadr word-hl-chars)))
+                (cond
+                 ((and (= occurences 1) (= hl-p 0))
+                  (setcar word-hl-chars pos))
+                 ((and (= occurences 2) (= hl-s 0))
+                  (setcar (cdr word-hl-chars) pos)))))))
+
+      (while (and (/= pos end)
+                  (or (eq evil-quickscope-search-max nil)
+                      (< num-searches evil-quickscope-search-max)))
+        (update-hl-chars pos)
+        (setq pos (+ pos direction))
+        (setq num-searches (1+ num-searches)))
+      (add-to-hl-chars)
+      hl-chars))
 
 ;;; Overlays
 (defun evil-quickscope-apply-overlays-forward ()
